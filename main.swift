@@ -52,6 +52,8 @@ final class Settings {
     var dinnerEnabled: Bool    { didSet { d.set(dinnerEnabled, forKey: "dinnerEnabled") } }
     var dinnerMinutes: Int     { didSet { d.set(dinnerMinutes, forKey: "dinnerMinutes") } }
     var loginItemDesired: Bool { didSet { d.set(loginItemDesired, forKey: "loginItemDesired") } }
+    var petScale: Double  { didSet { d.set(petScale, forKey: "petScale") } }
+    var petSpeed: Double  { didSet { d.set(petSpeed, forKey: "petSpeed") } }
     // custom message texts for the built-in reminders; empty = use the default bilingual messages
     var waterText: String  { didSet { d.set(waterText, forKey: "waterText") } }
     var walkText: String   { didSet { d.set(walkText, forKey: "walkText") } }
@@ -83,6 +85,8 @@ final class Settings {
         dinnerEnabled = bool("dinnerEnabled", true)
         dinnerMinutes = int("dinnerMinutes", Config.dinnerMinutes)
         loginItemDesired = bool("loginItemDesired", true)
+        petScale = ud.object(forKey: "petScale") == nil ? 1.0 : ud.double(forKey: "petScale")
+        petSpeed = ud.object(forKey: "petSpeed") == nil ? 1.0 : ud.double(forKey: "petSpeed")
         waterText = ud.string(forKey: "waterText") ?? ""
         walkText = ud.string(forKey: "walkText") ?? ""
         lunchText = ud.string(forKey: "lunchText") ?? ""
@@ -201,9 +205,10 @@ final class PetView: NSView {
     }
     weak var controller: PetController?
 
+    var petSize = NSSize(width: 130, height: 114)
     var petRect: NSRect {
-        NSRect(x: (bounds.width - PetController.petSize.width) / 2, y: 0,
-               width: PetController.petSize.width, height: PetController.petSize.height)
+        NSRect(x: (bounds.width - petSize.width) / 2, y: 0,
+               width: petSize.width, height: petSize.height)
     }
     var closeButtonRect: NSRect {
         NSRect(x: petRect.maxX - 20, y: petRect.maxY + 4, width: 24, height: 24)
@@ -368,6 +373,10 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     private var newMinutesStepper: NSStepper!
     private var newMinutesLabel: NSTextField!
     private var newTimePicker: NSDatePicker!
+    private var sizeSlider: NSSlider!
+    private var sizeValueLabel: NSTextField!
+    private var speedSlider: NSSlider!
+    private var speedValueLabel: NSTextField!
 
     init(controller: PetController) {
         self.controller = controller
@@ -459,14 +468,35 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             remindersNote,
         ])
 
-        // tab 2: user-defined reminders
+        // tab 2: pet size/speed + user-defined reminders
+        let petTitle = label("宠物 Pet")
+        petTitle.font = NSFont.boldSystemFont(ofSize: 13)
+
+        sizeSlider = NSSlider(value: Settings.shared.petScale, minValue: 0.6, maxValue: 2.0,
+                              target: self, action: #selector(sizeChanged))
+        sizeSlider.isContinuous = true
+        sizeSlider.widthAnchor.constraint(equalToConstant: 190).isActive = true
+        sizeValueLabel = label("")
+        speedSlider = NSSlider(value: Settings.shared.petSpeed, minValue: 0.3, maxValue: 3.0,
+                               target: self, action: #selector(speedChanged))
+        speedSlider.isContinuous = true
+        speedSlider.widthAnchor.constraint(equalToConstant: 190).isActive = true
+        speedValueLabel = label("")
+
+        let customTitle = label("自定义提醒 Custom Reminders")
+        customTitle.font = NSFont.boldSystemFont(ofSize: 13)
+
         let customHint = label("Add your own reminders — toggle with the checkbox, remove with ✕.\nChanges apply immediately and are saved permanently.")
         customHint.font = NSFont.systemFont(ofSize: 11)
         customHint.textColor = .secondaryLabelColor
 
         customTabStack = tabStack([
-            customListStack,
+            petTitle,
+            hRow([label("大小 Size"), sizeSlider, sizeValueLabel]),
+            hRow([label("速度 Speed"), speedSlider, speedValueLabel]),
             separator(),
+            customTitle,
+            customListStack,
             hRow([newReminderField, newTypePopup, newMinutesField, newMinutesStepper,
                   newMinutesLabel, newTimePicker, addButton]),
             customHint,
@@ -563,6 +593,16 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             "Drag the dog anywhere — let go and it falls back to the ground.",
             "暂停状态下拖到哪里它就停在哪里，像贴纸一样。",
             "A paused dog stays wherever you drop it, like a sticker.",
+        ])
+        section("⬆️ 屋顶散步 Top-Edge Walk", [
+            "把小狗拖到屏幕最顶上松手，它会站在屏幕上沿，在那里散步、休息。",
+            "Drop the dog at the very top of the screen — it perches on the top edge and walks, rests, and plays up there.",
+            "把它拖下来松手，它就落回屏幕底部继续正常散步。",
+            "Drag it back down and it falls to the bottom and walks normally again.",
+        ])
+        section("📏 大小与速度 Size & Speed", [
+            "在「自定义」页用两个滑块调整小狗的大小和走路速度，立即生效。",
+            "Use the two sliders in the 自定义 Custom tab to adjust the dog's size and walking speed — changes apply instantly.",
         ])
         section("😴 睡觉 Sleep Mode", [
             "把小狗拖出屏幕边缘再松手，它会蜷起来睡觉（自动缩回来一点，方便点到）。",
@@ -691,6 +731,17 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         win.setContentSize(NSSize(width: w + 24, height: h + 64))  // room for the tab bar
     }
 
+    @objc private func sizeChanged() {
+        Settings.shared.petScale = sizeSlider.doubleValue
+        sizeValueLabel.stringValue = String(format: "%.1f×", sizeSlider.doubleValue)
+        controller?.applyScale()
+    }
+
+    @objc private func speedChanged() {
+        Settings.shared.petSpeed = speedSlider.doubleValue
+        speedValueLabel.stringValue = String(format: "%.1f×", speedSlider.doubleValue)
+    }
+
     @objc private func newTypeChanged() {
         let daily = newTypePopup.indexOfSelectedItem == 1
         newMinutesField.isHidden = daily
@@ -784,6 +835,10 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         lunchMsgField.stringValue = s.lunchText
         dinnerMsgField.stringValue = s.dinnerText
         loginCheck.state = SMAppService.mainApp.status == .enabled ? .on : .off
+        sizeSlider.doubleValue = s.petScale
+        sizeValueLabel.stringValue = String(format: "%.1f×", s.petScale)
+        speedSlider.doubleValue = s.petSpeed
+        speedValueLabel.stringValue = String(format: "%.1f×", s.petSpeed)
         rebuildCustomList()
         relayout()
         updateEnabledStates()
@@ -875,11 +930,19 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
 final class PetController: NSObject, NSApplicationDelegate {
     enum State { case walking, idle, airborne, dragged, paused, sleeping }
 
-    static let petSize = NSSize(width: 130, height: 114)
-    let windowSize = NSSize(width: 144, height: 142)  // room for the ✕ above the pet
-    let walkSpeed: CGFloat = 2.0
+    let basePetSize = NSSize(width: 130, height: 114)
+    let baseWindowSize = NSSize(width: 144, height: 142)  // room for the ✕ above the pet
+    var petScale: CGFloat { CGFloat(Settings.shared.petScale) }
+    var petSize: NSSize {
+        NSSize(width: basePetSize.width * petScale, height: basePetSize.height * petScale)
+    }
+    var windowSize: NSSize {
+        NSSize(width: baseWindowSize.width * petScale, height: baseWindowSize.height * petScale)
+    }
+    var walkSpeed: CGFloat { 2.0 * CGFloat(Settings.shared.petSpeed) }
     let gravity: CGFloat = 0.55
     let jumpVelocity: CGFloat = 9.5
+    var onTopEdge = false        // perched on the top edge of the screen
 
     var window: NSWindow!
     var petView: PetView!
@@ -935,6 +998,7 @@ final class PetController: NSObject, NSApplicationDelegate {
         }
 
         petView = PetView(frame: NSRect(origin: .zero, size: windowSize))
+        petView.petSize = petSize
         petView.frames = frames
         petView.controller = self
         petView.eatImage = loadImage(named: "pet_eat")
@@ -1104,6 +1168,7 @@ final class PetController: NSObject, NSApplicationDelegate {
         y = area.maxY - windowSize.height - 10
         vx = 0; vy = 0
         state = .airborne
+        onTopEdge = false
         petView.showsCloseButton = false
         petView.isSleeping = false  // emergency recall also wakes it
         window.setFrameOrigin(NSPoint(x: x, y: y))
@@ -1117,7 +1182,7 @@ final class PetController: NSObject, NSApplicationDelegate {
             return  // hold still with mouth open, ready to chomp
         }
         let area = screenArea
-        let ground = area.minY
+        let ground = onTopEdge ? area.maxY - windowSize.height : area.minY
         let minX = area.minX
         let maxX = area.maxX - windowSize.width
         var bob: CGFloat = 0
@@ -1135,6 +1200,7 @@ final class PetController: NSObject, NSApplicationDelegate {
 
         case .walking:
             petView.poseOverride = nil
+            y = ground  // tracks scale changes and the top-edge perch line
             x += walkSpeed * direction
             phase += 0.22
             bob = abs(sin(phase)) * 5
@@ -1258,7 +1324,30 @@ final class PetController: NSObject, NSApplicationDelegate {
         x = window.frame.origin.x
         y = window.frame.origin.y
         vx = 0; vy = 0
-        state = .airborne  // stretches, falls back to the ground, walks on
+        // slept near the top? wake up perched on the top edge
+        onTopEdge = window.frame.maxY >= screenArea.maxY - 40
+        state = .airborne  // stretches, falls back to its ground, walks on
+    }
+
+    /// Apply the size slider: resize the window around the pet's current spot.
+    func applyScale() {
+        let area = screenArea
+        let old = window.frame
+        let newSize = windowSize
+        var nx = old.midX - newSize.width / 2
+        nx = max(area.minX, min(nx, area.maxX - newSize.width))
+        var ny = old.origin.y
+        if onTopEdge {
+            ny = area.maxY - newSize.height
+        } else if state == .walking || state == .idle {
+            ny = area.minY
+        }
+        window.setFrame(NSRect(x: nx, y: ny, width: newSize.width, height: newSize.height),
+                        display: true)
+        petView.petSize = petSize
+        petView.needsDisplay = true
+        x = nx
+        y = ny
     }
 
     func togglePaused() {
@@ -1296,7 +1385,16 @@ final class PetController: NSObject, NSApplicationDelegate {
             return
         }
         if state == .paused { return }  // stays where you put it (on screen)
-        state = .airborne
+        if f.maxY >= area.maxY - 40 {
+            // dropped at the very top: perch on the top edge of the screen
+            onTopEdge = true
+            y = area.maxY - windowSize.height
+            window.setFrameOrigin(NSPoint(x: x, y: y))
+            state = .walking
+        } else {
+            onTopEdge = false  // dragged away from the edge: back to the floor
+            state = .airborne
+        }
     }
 
     // MARK: reminders (checked once per second)

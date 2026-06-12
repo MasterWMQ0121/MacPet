@@ -63,6 +63,12 @@ open /Applications/MacPet.app
   stays put (no falling, no walking) and can be dragged anywhere.
   **Double-click** it to wake it up — it falls to the ground and walks on.
   ("Drop From Top" in the 🐾 menu also wakes it, as an emergency recall.)
+- **Top-edge walk** ⬆️: drop the pet at the very top of the screen and it
+  perches there — walking, idling, settling down, and sleeping along the top
+  edge. Drag it back down and it falls to the bottom and resumes normal life.
+- **Size & speed sliders**: in the settings window's 自定义 Custom tab —
+  scale the pet 0.6×–2× and set its walking speed 0.3×–3×; both apply
+  instantly and are saved.
 - A 🐾 menu bar icon (no Dock icon) has Reminder Settings (⌘,),
   "Drop From Top" (⌘R) and "Quit MacPet" (⌘Q).
 
