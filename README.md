@@ -1,14 +1,21 @@
 # MacPet 🐾
 
-A native macOS desktop pet using the pixel-art cat from `pet.svg`
-(extracted from the original screenshot SVG, background removed for transparency).
-It is also a gentle wellness companion: it reminds you to drink water,
-take walk breaks, and eat lunch/dinner on time.
+A native macOS desktop pet — a pixel-art puppy that lives at the bottom of
+your screen. It is also a gentle wellness companion: it reminds you to drink
+water, take walk breaks, and eat lunch/dinner on time.
 
-## Where it lives
+> **📦 Installing a downloaded copy?** If macOS says the app is
+> **"damaged" or "can't be opened"** — it isn't. That's just the missing
+> Apple developer signature. See **[INSTALL.md](INSTALL.md)** (中文/English)
+> for the 3-step fix.
 
-- **Installed app: `/Applications/MacPet.app`** (Finder → Applications → MacPet)
-- Source + build output: this folder (`MacPet.app` here is the build artifact)
+## Project layout
+
+- `main.swift` — the entire app (Swift/AppKit, no dependencies)
+- `build.sh` — builds and signs `MacPet.app` (universal, macOS 13+)
+- `Assets/` — all artwork (pose frames + speech bubble + SVG fallback)
+- `INSTALL.md` — bilingual install guide for unsigned-app errors
+- Installed app lives at `/Applications/MacPet.app`
 
 It registers itself as a **Login Item** on first launch, so it starts
 automatically when you log in (System Settings → General → Login Items shows it;
@@ -111,7 +118,12 @@ Debug tricks (run the binary directly with an env var):
 
 ## Swap the artwork
 
-Replace `pet0.png` (standing) and `pet1.png` (leap/stride) — transparent
-PNGs, artwork facing left — and run `./build.sh` again. More frames can be
-added by extending the `["pet0", "pet1"]` list and frame logic in `main.swift`.
-(`pet.svg` remains as a single-frame fallback.)
+All images live in `Assets/`: `pet0.png` (standing), `pet1.png` (leap),
+`pet_sit.png`, `pet_lie.png`, `pet_lie2.png`, `pet_eat.png`, `pet_sleep.png`,
+and `bubble.png` (the 9-sliced speech bubble). Replace any of them —
+transparent PNGs, artwork facing left — and run `./build.sh` again.
+(`Assets/pet.svg` remains as a single-frame fallback.)
+
+## License
+
+[MIT](LICENSE)

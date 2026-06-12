@@ -13,8 +13,7 @@ swiftc -O -target x86_64-apple-macos13 main.swift -o /tmp/MacPet-x86_64
 lipo -create -output "$APP/Contents/MacOS/MacPet" /tmp/MacPet-arm64 /tmp/MacPet-x86_64
 rm /tmp/MacPet-arm64 /tmp/MacPet-x86_64
 
-cp pet0.png pet1.png pet_eat.png pet_sleep.png pet_sit.png pet_lie.png pet_lie2.png bubble.png "$APP/Contents/Resources/"
-cp pet.svg "$APP/Contents/Resources/pet.svg"
+cp Assets/* "$APP/Contents/Resources/"
 
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
