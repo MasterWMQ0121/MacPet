@@ -594,11 +594,13 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             "暂停状态下拖到哪里它就停在哪里，像贴纸一样。",
             "A paused dog stays wherever you drop it, like a sticker.",
         ])
-        section("⬆️ 屋顶散步 Top-Edge Walk", [
-            "把小狗拖到屏幕最顶上松手，它会站在屏幕上沿，在那里散步、休息。",
-            "Drop the dog at the very top of the screen — it perches on the top edge and walks, rests, and plays up there.",
-            "把它拖下来松手，它就落回屏幕底部继续正常散步。",
-            "Drag it back down and it falls to the bottom and walks normally again.",
+        section("⬆️ 窗户上散步 Window-Edge Walk", [
+            "把小狗放到任意窗口的上边缘松手，它会站上去，在窗口顶上散步、休息。",
+            "Drop the dog on the top edge of any app window — it perches there and walks, rests, and plays along it.",
+            "窗口移动时它会跟着走；窗口关掉了它就跳下来。",
+            "It rides along when the window moves, and hops off if the window closes.",
+            "把它拖走松手，它就落回屏幕底部继续正常散步。",
+            "Drag it away and it falls back to the bottom of the screen.",
         ])
         section("📏 大小与速度 Size & Speed", [
             "在「自定义」页用两个滑块调整小狗的大小和走路速度，立即生效。",
@@ -942,7 +944,14 @@ final class PetController: NSObject, NSApplicationDelegate {
     var walkSpeed: CGFloat { 2.0 * CGFloat(Settings.shared.petSpeed) }
     let gravity: CGFloat = 0.55
     let jumpVelocity: CGFloat = 9.5
-    var onTopEdge = false        // perched on the top edge of the screen
+    struct Perch {
+        var windowID: UInt32
+        var edgeY: CGFloat   // AppKit y of the host window's top edge
+        var minX: CGFloat
+        var maxX: CGFloat
+    }
+    var perch: Perch?            // perched on another app window's top edge
+    private var perchRefreshTick = 0
 
     var window: NSWindow!
     var petView: PetView!
@@ -1168,7 +1177,7 @@ final class PetController: NSObject, NSApplicationDelegate {
         y = area.maxY - windowSize.height - 10
         vx = 0; vy = 0
         state = .airborne
-        onTopEdge = false
+        perch = nil
         petView.showsCloseButton = false
         petView.isSleeping = false  // emergency recall also wakes it
         window.setFrameOrigin(NSPoint(x: x, y: y))
@@ -1181,10 +1190,17 @@ final class PetController: NSObject, NSApplicationDelegate {
             positionBubble()
             return  // hold still with mouth open, ready to chomp
         }
+        if perch != nil { refreshPerchIfNeeded() }
         let area = screenArea
-        let ground = onTopEdge ? area.maxY - windowSize.height : area.minY
-        let minX = area.minX
-        let maxX = area.maxX - windowSize.width
+        let ground = perch?.edgeY ?? area.minY
+        var minX = area.minX
+        var maxX = area.maxX - windowSize.width
+        if let p = perch {
+            // walk only along the host window's top edge
+            minX = max(minX, p.minX - windowSize.width / 2)
+            maxX = min(maxX, p.maxX - windowSize.width / 2)
+            if minX > maxX { minX = maxX }
+        }
         var bob: CGFloat = 0
         stateTime += 1.0 / 60.0
 
@@ -1229,6 +1245,7 @@ final class PetController: NSObject, NSApplicationDelegate {
 
         case .idle:
             petView.frameIndex = 0
+            y = ground  // ride along if the host window moves
             if idleSettles {
                 // stand → sit → lie belly-up → sit → stand
                 let t = stateTime, d = stateDuration
@@ -1303,6 +1320,7 @@ final class PetController: NSObject, NSApplicationDelegate {
 
     func enterSleep() {
         state = .sleeping
+        perch = nil  // sleeping pets stay exactly where they're put
         petView.isSleeping = true
         petView.showsCloseButton = false
         clampSleepingPosition()
@@ -1324,8 +1342,6 @@ final class PetController: NSObject, NSApplicationDelegate {
         x = window.frame.origin.x
         y = window.frame.origin.y
         vx = 0; vy = 0
-        // slept near the top? wake up perched on the top edge
-        onTopEdge = window.frame.maxY >= screenArea.maxY - 40
         state = .airborne  // stretches, falls back to its ground, walks on
     }
 
@@ -1337,8 +1353,8 @@ final class PetController: NSObject, NSApplicationDelegate {
         var nx = old.midX - newSize.width / 2
         nx = max(area.minX, min(nx, area.maxX - newSize.width))
         var ny = old.origin.y
-        if onTopEdge {
-            ny = area.maxY - newSize.height
+        if let p = perch {
+            ny = p.edgeY
         } else if state == .walking || state == .idle {
             ny = area.minY
         }
@@ -1385,15 +1401,74 @@ final class PetController: NSObject, NSApplicationDelegate {
             return
         }
         if state == .paused { return }  // stays where you put it (on screen)
-        if f.maxY >= area.maxY - 40 {
-            // dropped at the very top: perch on the top edge of the screen
-            onTopEdge = true
-            y = area.maxY - windowSize.height
+        if let target = findPerch() {
+            // dropped on the top edge of an app window: perch and walk there
+            perch = target
+            y = target.edgeY
             window.setFrameOrigin(NSPoint(x: x, y: y))
             state = .walking
         } else {
-            onTopEdge = false  // dragged away from the edge: back to the floor
+            perch = nil  // dragged away from any edge: back to the floor
             state = .airborne
+        }
+    }
+
+    // MARK: window-edge perching
+
+    func visibleWindowEdges() -> [Perch] {
+        guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements],
+                                                    kCGNullWindowID) as? [[String: Any]] else { return [] }
+        let myPID = Int32(ProcessInfo.processInfo.processIdentifier)
+        let screenTop = NSScreen.screens.first?.frame.maxY ?? 0
+        var edges: [Perch] = []
+        for info in list {  // ordered front to back
+            guard (info[kCGWindowLayer as String] as? Int) == 0,           // normal windows only
+                  (info[kCGWindowOwnerPID as String] as? Int32) != myPID,
+                  ((info[kCGWindowAlpha as String] as? Double) ?? 1) > 0.1,
+                  let boundsDict = info[kCGWindowBounds as String] as? NSDictionary,
+                  let rect = CGRect(dictionaryRepresentation: boundsDict),
+                  rect.width >= 200, rect.height >= 80,
+                  let wid = info[kCGWindowNumber as String] as? UInt32
+            else { continue }
+            edges.append(Perch(windowID: wid,
+                               edgeY: screenTop - rect.minY,  // CG y counts down from screen top
+                               minX: rect.minX,
+                               maxX: rect.maxX))
+        }
+        return edges
+    }
+
+    func findPerch() -> Perch? {
+        let petBottom = window.frame.minY
+        let petMidX = window.frame.midX
+        let area = screenArea
+        for t in visibleWindowEdges() {  // frontmost window wins
+            guard petMidX >= t.minX - 10, petMidX <= t.maxX + 10,
+                  abs(petBottom - t.edgeY) <= 35,
+                  t.edgeY > area.minY + 10, t.edgeY < area.maxY - 10
+            else { continue }
+            return t
+        }
+        return nil
+    }
+
+    /// Re-check the host window ~6×/s: follow it if it moves, hop off if it's gone.
+    func refreshPerchIfNeeded() {
+        perchRefreshTick += 1
+        guard perchRefreshTick >= 10 else { return }
+        perchRefreshTick = 0
+        guard let current = perch else { return }
+        if let updated = visibleWindowEdges().first(where: { $0.windowID == current.windowID }),
+           updated.edgeY > screenArea.minY + 10, updated.edgeY < screenArea.maxY - 10 {
+            perch = updated
+        } else {
+            // host window closed, minimized, or left the screen — hop off
+            perch = nil
+            if state == .walking || state == .idle {
+                petView.poseOverride = nil
+                vy = 0; vx = 0
+                state = .airborne
+            }
         }
     }
 
